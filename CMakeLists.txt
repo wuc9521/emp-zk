@@ -88,12 +88,15 @@ if(EMP_ZK_INSTALL)
         ${CMAKE_CURRENT_BINARY_DIR}/emp-zk-config.cmake
         ${CMAKE_CURRENT_BINARY_DIR}/emp-zk-config-version.cmake
         DESTINATION ${_cmake_install_dir})
-endif()
 
-# Build-tree export so siblings can consume without `make install`.
-export(EXPORT emp-zkTargets
-       NAMESPACE emp-zk::
-       FILE      ${CMAKE_CURRENT_BINARY_DIR}/emp-zkTargets.cmake)
+    # Build-tree export so siblings can consume without `make install`. Gated
+    # on EMP_ZK_INSTALL, as in emp-ot: the emp-zkTargets export set exists only
+    # with install(TARGETS ... EXPORT) above, and an add_subdirectory consumer
+    # links the emp-zk::emp-zk ALIAS target directly.
+    export(EXPORT emp-zkTargets
+           NAMESPACE emp-zk::
+           FILE      ${CMAKE_CURRENT_BINARY_DIR}/emp-zkTargets.cmake)
+endif()
 
 # ---------------------------------------------------------------------
 # Tests
