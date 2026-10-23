@@ -56,8 +56,15 @@ public:
       for (int i = 0; i < 5; ++i)
         vector_inn_prdt_sum_red(check_sum + i, chi.data(), buffer[i].data(), num);
 
-      // TODO mask
-      //
+      // The mask: sum_j K_j Delta^j (j < 4) over four random committed
+      // elements (x_j, M_j = K_j + x_j Delta). Its coefficients M_0,
+      // M_j + x_{j-1} and x_3 are uniform, so the sums sent are uniform but
+      // for the relation that the verifier checks.
+      block x[4], m[4];
+      random_elements(x, m);
+      check_sum[0] ^= m[0];
+      for (int j = 1; j < 4; ++j) check_sum[j] ^= m[j] ^ x[j - 1];
+      check_sum[4] ^= x[3];
       io->send_data(check_sum, 5 * sizeof(block));
       io->flush();
     } else {
@@ -67,8 +74,14 @@ public:
       block B;
       vector_inn_prdt_sum_red(&B, chi.data(), buffer[0].data(), num);
 
-      // TODO mask
-      //
+      // the key of the mask of the prover: sum_j K_j Delta^j
+      block k[4], kd;
+      random_elements(nullptr, k);
+      B ^= k[0];
+      for (int j = 1; j < 4; ++j) {
+        gfmul(k[j], delta[j - 1], &kd);
+        B ^= kd;
+      }
       io->recv_data(check_sum, 5 * sizeof(block));
 
       block t[4];
@@ -79,6 +92,22 @@ public:
         error("product by polynomial fails");
     }
     num = 0;
+  }
+
+  // Four random committed elements of F(2^128), 128 random COTs each: the
+  // values x and the MACs m (prover), or the keys m (verifier).
+  void random_elements(block *x, block *m) {
+    block cot[128];
+    GaloisFieldPacking pack;
+    for (int j = 0; j < 4; ++j) {
+      ferret->next_n(cot, 128);
+      pack.packing(&m[j], cot);
+      if (party == ALICE) {
+        bool bits[128];
+        for (int i = 0; i < 128; ++i) bits[i] = getLSB(cot[i]);
+        pack.packing(&x[j], bits);
+      }
+    }
   }
 
   // Templated polynomial-product MAC step.
@@ -320,21 +349,19 @@ private:
     return acc;
   }
 
-  // Open both product wires and check p_A(r) == p_B(r): the prover ships her
-  // two MAC shares; the verifier folds them into its keys, recovering
-  // val_A·Δ and val_B·Δ, and checks they match (⇒ val_A == val_B). Forging a
-  // pass with val_A ≠ val_B would require guessing Δ.
+  // Check p_A(r) == p_B(r) by opening the difference only: the prover sends
+  // the MAC of pa - pb, which is the key of the verifier when the difference
+  // is 0; another difference passes only if the prover guesses Delta. The
+  // values pa and pb stay hidden.
   void open_eq_(const F2kAuthValue &pa, const F2kAuthValue &pb) {
-    block macs[2] = { pa.mac, pb.mac };
+    const block mac = pa.mac ^ pb.mac;
     if (bb->party == ALICE) {
-      bb->io->send_data(macs, 2 * sizeof(block));
+      bb->io->send_data(&mac, sizeof(block));
       bb->io->flush();
     } else {
-      block recv[2];
-      bb->io->recv_data(recv, 2 * sizeof(block));
-      macs[0] = macs[0] ^ recv[0];
-      macs[1] = macs[1] ^ recv[1];
-      if (memcmp(macs, macs + 1, sizeof(block)) != 0)
+      block recv;
+      bb->io->recv_data(&recv, sizeof(block));
+      if (!cmpBlock(&recv, &mac, 1))
         error("ZKPermProof: A is not a permutation of B");
     }
   }
