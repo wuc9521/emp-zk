@@ -242,6 +242,38 @@ public:
     f2k_in_cnt = f2k_buffer_sz;        // sentinel: refill on first f2k_input
     f2k_ready = true;
     f2k_pre_buffer_refill();
+    f2k_delta_check();
+  }
+
+  // The verifier's key of the field VOLE is the key Delta of the bits (it chose it: set_delta). Checked by the prover before any value of
+  // the field VOLE is used: one random value r, committed as bits (f2k_pack_v) and as a field element (one VOLE value rho, which f2k_mul's
+  // bookkeeping skips: it takes the difference of its counters). The verifier sends K_b + K_n; it is M_b + M_n if its keys agree, and
+  // M_b + M_n + rho (Delta + Delta') if not, which it guesses with probability 2^-128.
+  void f2k_delta_check() {
+    AuthValueF2k rho = f2k_auth_buffer[f2k_authval_cnt++];
+    block r = zero_block;
+    if (party == ALICE) prg.random_block(&r, 1);
+    const block mb = f2k_pack_v(r);
+    block mn, diff;
+    if (party == ALICE) {
+      diff = r ^ rho.val;
+      io->send_data(&diff, sizeof(block));
+      mn = rho.mac;
+    } else {
+      io->recv_data(&diff, sizeof(block));
+      gfmul(delta, diff, &diff);
+      mn = rho.mac ^ diff;
+    }
+    block d = mb ^ mn;
+    if (party == BOB) {
+      io->send_data(&d, sizeof(block));
+      io->flush();
+    } else {
+      io->flush();
+      block got;
+      io->recv_data(&got, sizeof(block));
+      if (!cmpBlock(&got, &d, 1)) error("the verifier's key of the field VOLE is not its key of the bits");
+    }
   }
 
   // Commit a cleartext F(2^128) value as an authenticated wire (the f2k
