@@ -106,7 +106,7 @@ public:
     // offset 0, so the cast is a no-op at runtime. Ferret now takes a
     // single IOChannel (post-unification with the other OT extensions).
     IOChannel *iochan = reinterpret_cast<IOChannel *>(io_);
-    ferret = new SilentFerret(3 - p, iochan, /*malicious=*/true);
+    ferret = new SilentFerret(3 - p, iochan, /*malicious=*/true, tuning::ferret_b13, nullptr, 2);
     delta = ferret->Delta;           // Δ sampled in Ferret's ctor
     // One persistent SilentFerret streaming session for the whole proof. COTs
     // are drawn lazily, one per AND gate, straight from the streaming interface
