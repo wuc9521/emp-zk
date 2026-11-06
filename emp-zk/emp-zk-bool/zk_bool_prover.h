@@ -187,10 +187,6 @@ private:
   void f2k_mul(F2kAuthValue &out, const F2kAuthValue &a,
                const F2kAuthValue &b) override {
     f2k_init();
-    if (f2k_check_cnt == f2k_buffer_sz) {
-      f2k_check_manage();
-      f2k_check_cnt = 0;
-    }
     if (f2k_authval_cnt == f2k_buffer_sz)
       f2k_pre_buffer_refill();
     f2k_left_val[f2k_check_cnt] = a.val;

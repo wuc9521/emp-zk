@@ -303,6 +303,11 @@ public:
   // Bulk-refill the pre-drawn VOLE buffer (one chunk-aligned run, so no
   // leftover) and reset the consume cursor.
   void f2k_pre_buffer_refill() {
+    // Pending products still refer to this buffer's output MACs.
+    if (f2k_check_cnt != 0) {
+      f2k_check_manage();
+      f2k_check_cnt = 0;
+    }
     f2k_vole->run(f2k_auth_buffer.data(), f2k_buffer_sz);
     f2k_authval_cnt = 0;
   }
