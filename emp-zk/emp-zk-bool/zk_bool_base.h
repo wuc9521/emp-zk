@@ -3,8 +3,8 @@
 
 // The emp-zk-bool proof engine — a standalone class (no emp-tool Backend
 // inheritance, no global pointer) wrapped by ZKBoolContext (zk_context.h) and
-// owned by ZKBoolSession (zk_session.h). Single-threaded; one BoolIO* drives both
-// the gate-level bool stream and Ferret's OT-extension data.
+// owned by ZKBoolSession (zk_session.h). Gate and I/O operations stay on the
+// owner thread; Ferret may use an explicitly selected OT worker pool.
 //
 // Layout:
 //   - zk_bool_base.h     — ZKBoolBase: shared state, the typed gate / I-O surface
@@ -28,6 +28,7 @@
 #include "emp-zk/emp-zk-bool/zk_wire.h"
 #include "emp-zk/emp-zk-bool/bool_io.h"
 #include "emp-zk/emp-zk-bool/polynomial.h"
+#include <limits>
 #include <memory>
 
 namespace emp {
@@ -100,13 +101,15 @@ public:
   // whole proof's COT consumption is wire-free. 0 (the default) uses the
   // per-round streaming begin() — safe for an unknown circuit size, at the cost
   // of one COT-correction burst per ~15M-COT round.
-  ZKBoolBase(int p, BoolIO *io_, int64_t expected_cots = 0)
+  ZKBoolBase(int p, BoolIO *io_, int64_t expected_cots = 0, int ot_threads = 1)
       : party(p), io(io_) {
+    if (ot_threads < 1 || ot_threads > std::numeric_limits<int>::max() / 8)
+      error("ZKBoolBase: OT thread count must be positive and at most INT_MAX/8");
     // BoolIO inherits IOChannel publicly with the IOChannel subobject at
     // offset 0, so the cast is a no-op at runtime. Ferret now takes a
     // single IOChannel (post-unification with the other OT extensions).
     IOChannel *iochan = reinterpret_cast<IOChannel *>(io_);
-    ferret = new SilentFerret(3 - p, iochan, /*malicious=*/true, tuning::ferret_b13, nullptr, 2);
+    ferret = new SilentFerret(3 - p, iochan, /*malicious=*/true, tuning::ferret_b13, nullptr, ot_threads);
     delta = ferret->Delta;           // Δ sampled in Ferret's ctor
     // One persistent SilentFerret streaming session for the whole proof. COTs
     // are drawn lazily, one per AND gate, straight from the streaming interface

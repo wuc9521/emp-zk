@@ -10,8 +10,8 @@ using namespace std;
 
 class ZKBoolProver : public ZKBoolBase {
 public:
-  ZKBoolProver(BoolIO *io, int64_t expected_cots = 0)
-      : ZKBoolBase(ALICE, io, expected_cots) {
+  ZKBoolProver(BoolIO *io, int64_t expected_cots = 0, int ot_threads = 1)
+      : ZKBoolBase(ALICE, io, expected_cots, ot_threads) {
     // PUBLIC label for bit 1 has its LSB set so getLSB() reads back the
     // cleartext value. (Verifier instead xors zdelta into pub_label[1].)
     pub_label[1] = pub_label[1] ^ bit0_mask;

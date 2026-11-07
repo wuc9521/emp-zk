@@ -15,8 +15,8 @@ public:
   // specific because NOT folds it on the wire.
   block zdelta;
 
-  ZKBoolVerifier(BoolIO *io, int64_t expected_cots = 0)
-      : ZKBoolBase(BOB, io, expected_cots) {
+  ZKBoolVerifier(BoolIO *io, int64_t expected_cots = 0, int ot_threads = 1)
+      : ZKBoolBase(BOB, io, expected_cots, ot_threads) {
     zdelta = delta ^ bit0_mask;
     // PUBLIC label for bit 1: xor zdelta in so the wire MAC is right
     // even though there's no cleartext flip.

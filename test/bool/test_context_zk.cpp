@@ -12,6 +12,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory>
+#include <limits>
+#include <string>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <span>
 #include <vector>
 
@@ -40,8 +44,48 @@ static std::vector<uint8_t> reveal_wires(ZKBoolSession &sess, int recipient,
   return out;
 }
 
-void run(BoolIO *io, int party) {
-  ZKBoolSession sess(io, party);
+// Invalid configurations must fail at the shared Base guard before live OT.
+// Run before any session/pool exists; a signal or timeout is a test failure.
+template <class Make>
+static void rejects_ot_threads(const char *api, int threads, Make make) {
+  int diagnostic[2];
+  expecting(pipe(diagnostic) == 0, "OT-thread test: pipe failed");
+  std::fflush(nullptr);
+  const pid_t child = fork();
+  expecting(child >= 0, "OT-thread test: fork failed");
+  if (child == 0) {
+    close(diagnostic[0]);
+    if (dup2(diagnostic[1], STDERR_FILENO) < 0) std::_Exit(3);
+    close(diagnostic[1]);
+    alarm(3);
+    make();
+    std::_Exit(0);
+  }
+  close(diagnostic[1]);
+  std::string text;
+  char buffer[512];
+  ssize_t got;
+  while ((got = read(diagnostic[0], buffer, sizeof buffer)) > 0)
+    text.append(buffer, static_cast<size_t>(got));
+  close(diagnostic[0]);
+  int status = 0;
+  const bool waited = waitpid(child, &status, 0) == child;
+  const bool rejected = waited && WIFEXITED(status) && WEXITSTATUS(status) == 1 &&
+      text.find("ZKBoolBase: OT thread count must be positive and at most INT_MAX/8") != std::string::npos;
+  if (!rejected) ++fails;
+  std::printf("OT threads %s %d: %s\n", api, threads, rejected ? "rejected at Base" : "FAIL");
+  if (!rejected || !text.empty()) std::fprintf(stderr, "%s", text.c_str());
+}
+
+static void invalid_ot_threads(BoolIO *io, int party) {
+  for (const int threads : {0, -1, std::numeric_limits<int>::max() / 8 + 1, std::numeric_limits<int>::max()}) {
+    rejects_ot_threads("Session", threads, [&] { ZKBoolSession session(io, party, 0, threads); });
+    rejects_ot_threads("Prover", threads, [&] { ZKBoolProver prover(io, 0, threads); });
+    rejects_ot_threads("Verifier", threads, [&] { ZKBoolVerifier verifier(io, 0, threads); });
+  }
+}
+
+void run(ZKBoolSession &sess, int party, const char *configuration) {
   ZKBoolSession::ctx_t &ctx = sess.ctx();
 
   // (1) Typed UInt32 add over the ZK context, via the session's generic
@@ -81,7 +125,7 @@ void run(BoolIO *io, int party) {
 
   sess.finalize();
   if (party == ALICE)
-    printf("test_context_zk: %s\n",
+    printf("test_context_zk (%s): %s\n", configuration,
            fails ? "FAILED"
                  : "BooleanContext over ZK (UInt32 add + sha256_256 replay) — PASS");
 }
@@ -90,6 +134,21 @@ int main(int argc, char **argv) {
   party = parse_party(argv);
   auto netio = (party == ALICE) ? NetIO::listen(peer_port()) : NetIO::connect(peer_ip(), peer_port());
   BoolIO io(netio.get(), party == ALICE);
-  run(&io, party);
+  invalid_ot_threads(&io, party);
+  if (fails) return 1;
+  {
+    ZKBoolSession session(&io, party);
+    run(session, party, "omitted: default 1");
+  }
+  for (const int threads : {1, 2, 3, 4}) {
+    ZKBoolSession session(&io, party, 0, threads);
+    const std::string label = "explicit " + std::to_string(threads);
+    run(session, party, label.c_str());
+  }
+  {
+    // The existing third argument remains the COT prepay count, not workers.
+    ZKBoolSession session(&io, party, int64_t{1024});
+    run(session, party, "third expected_cots argument");
+  }
   return fails ? 1 : 0;
 }

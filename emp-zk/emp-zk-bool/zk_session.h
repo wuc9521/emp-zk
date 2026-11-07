@@ -52,12 +52,13 @@ public:
     // inputs + check overhead) and all COT correction traffic + malicious checks
     // ship once at setup, leaving the whole proof's COT consumption wire-free.
     // 0 (default) uses per-round streaming, safe for an unknown circuit size.
-    ZKBoolSession(BoolIO* io, int party, int64_t expected_cots = 0) {
+    // OT workers per party: 1 is serial; larger counts use a helper pool.
+    ZKBoolSession(BoolIO* io, int party, int64_t expected_cots = 0, int ot_threads = 1) {
         if (party != ALICE && party != BOB)
             error("ZKBoolSession: party must be ALICE or BOB");
         if (io == nullptr) error("ZKBoolSession: io channel must not be null");
-        if (party == ALICE) eng_ = new ZKBoolProver(io, expected_cots);
-        else                eng_ = new ZKBoolVerifier(io, expected_cots);
+        if (party == ALICE) eng_ = new ZKBoolProver(io, expected_cots, ot_threads);
+        else                eng_ = new ZKBoolVerifier(io, expected_cots, ot_threads);
         ctx_ = ZKBoolContext(eng_);
     }
     ~ZKBoolSession() { finalize(); }
