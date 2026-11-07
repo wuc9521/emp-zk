@@ -406,8 +406,9 @@ inline void ramzk_pack_record(ZKBoolBase *bb,
 
 // Bit width needed to hold any value in [0, hi]: the smallest b with 2^b > hi.
 inline int64_t ramzk_bits_for(int64_t hi) {
+  if (hi < 0) error("ramzk_bits_for: negative bound");
   int64_t b = 1;
-  while ((int64_t(1) << b) <= hi)
+  while ((uint64_t(1) << b) <= static_cast<uint64_t>(hi))
     ++b;
   return b;
 }
